@@ -445,19 +445,31 @@ if run and horizons:
         row = wide[(wide["years"] == yr) & (wide["job"] == job_name)]
         return float(row[coln].iloc[0]) if not row.empty else np.nan
 
+    # Build band data with your current job names
     band_data = pd.DataFrame({
-        "job": [jobA.name, jobA.name, jobA.name, jobB.name, jobB.name, jobB.name],
+        "job":  [jobA.name, jobA.name, jobA.name, jobB.name, jobB.name, jobB.name],
         "stat": ["p10", "p50", "p90", "p10", "p50", "p90"],
-        "value": [get_val(jobA.name, s) for s in ["p10", "p50", "p90"]] + [get_val(jobB.name, s) for s in ["p10", "p50", "p90"]],
+        "value": [get_val(jobA.name, s) for s in ["p10", "p50", "p90"]]
+            + [get_val(jobB.name, s) for s in ["p10", "p50", "p90"]],
     })
 
-    band_chart = alt.Chart(band_data).mark_bar().encode(
-        x=alt.X("job:N", title="Job"),
-        y=alt.Y("value:Q", title=metric_name),
-        color="stat:N",
-        tooltip=["job", "stat", alt.Tooltip("value:Q", format=",")],
-    ).properties(width=200, height=300)
-    st.altair_chart(band_chart, use_container_width=True)
+    # If everything is NaN (e.g., user hasn't run yet), skip the chart gracefully
+    if band_data["value"].isna().all():
+        st.info("Run the simulation to see band chart.")
+    else:
+        band_chart = (
+            alt.Chart(band_data.dropna())
+            .mark_bar()
+            .encode(
+                x=alt.X("job:N", title="Job"),
+                y=alt.Y("value:Q", title=metric_name),
+                color=alt.Color("stat:N", legend=alt.Legend(title="Percentile")),
+                tooltip=["job", "stat", alt.Tooltip("value:Q", format=",")]
+            )
+            .properties(width=200, height=300)
+        )
+        st.altair_chart(band_chart, use_container_width=True)
+
 
     long_rows = []
     for y in horizons:
