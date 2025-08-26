@@ -260,7 +260,7 @@ def simulate_jobs(years: int, n_trials: int, jobA: JobParams, jobB: JobParams, g
 # UI
 # --------------------------------------------
 st.set_page_config(page_title="Job Compensation Monte Carlo (IN)", layout="wide")
-st.title("Job Compensation Monte Carlo – Indiana + County taxes")
+st.title("Job Offer Comparison Simulations")
 
 # Presets so inputs are selectable (not hard-coded)
 PRESETS = {
