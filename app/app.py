@@ -1,14 +1,3 @@
-# Streamlit app: Job Compensation Monte Carlo (Indiana + County taxes, HSA/401k, vesting, NPV)
-# -------------------------------------------------------------------------------------------
-# How to run locally:
-#   1) pip install streamlit numpy pandas altair openpyxl xlsxwriter
-#   2) streamlit run streamlit_job_comp_mc_app.py
-#
-# This version makes **Job 1** and **Job 2** fully symmetric: each job can use
-# fixed or triangular raises, fixed or triangular bonuses, its own employer 401(k)
-# policy, and its own vesting schedule (immediate / cliff / graded).
-# It covers both of your original job scenarios and is flexible for others.
-
 from __future__ import annotations
 import io
 from dataclasses import dataclass
