@@ -260,32 +260,7 @@ def simulate_jobs(years: int, n_trials: int, jobA: JobParams, jobB: JobParams, g
 # UI
 # --------------------------------------------
 st.set_page_config(page_title="Job Compensation Monte Carlo (IN)", layout="wide")
-st.title("Job Offer Comparison Simulations")
-
-# Presets so inputs are selectable (not hard-coded)
-PRESETS = {
-    "Original Job 1": dict(
-        base_start=125000.0,
-        raise_type='fixed', base_raise_fixed=0.03,
-        bonus_type='tri', bonus_tri=(0.0, 0.20, 0.30),
-        employer_401k_rate_on_total=0.15,
-        vesting_type='cliff', cliff_years=6,
-    ),
-    "Original Job 2": dict(
-        base_start=96000.0,
-        raise_type='tri', raise_tri=(0.07, 0.135, 0.20),
-        bonus_type='fixed', bonus_rate_fixed=0.10,
-        employer_401k_rate_on_total=0.0,
-        vesting_type='immediate',
-    ),
-    "Blank Custom": dict(
-        base_start=100000.0,
-        raise_type='fixed', base_raise_fixed=0.03,
-        bonus_type='fixed', bonus_rate_fixed=0.10,
-        employer_401k_rate_on_total=0.00,
-        vesting_type='immediate',
-    ),
-}
+st.title("Job Compensation Monte Carlo – Indiana + County taxes")
 
 with st.sidebar:
     st.header("Global settings")
@@ -316,71 +291,49 @@ with st.sidebar:
 
 st.subheader("Job setup")
 
-# Place these right under st.subheader("Job setup")
-# st.markdown("### Presets")
-# col_p1, col_p2 = st.columns(2)
-# with col_p1:
-    
-# with col_p2:
-    
+# Symmetric job control builder (no presets). Dynamic controls for raises/bonuses.
 
-# Editors (use the chosen preset as defaults)
-col1, col2 = st.columns(2)
-with col1:
-    preset1 = st.selectbox("Preset for Job 1", list(PRESETS.keys()), index=0, key="preset1")
-    jobA = job_controls("Job 1", defaults=PRESETS[preset1], key_prefix="j1")
-with col2:
-    preset2 = st.selectbox("Preset for Job 2", list(PRESETS.keys()), index=1, key="preset2")
-    jobB = job_controls("Job 2", defaults=PRESETS[preset2], key_prefix="j2")
-
-# Symmetric job control builder
-
-def job_controls(job_label: str, defaults: Dict, key_prefix: str) -> JobParams:
+def job_controls(job_label: str, key_prefix: str) -> JobParams:
     name = st.text_input(f"Name ({job_label})", value=job_label, key=f"{key_prefix}_name")
-    base = st.number_input(f"Starting base ({job_label})", 0.0, 2_000_000.0, defaults.get('base_start', 100000.0), 1000.0, key=f"{key_prefix}_base")
+    base = st.number_input(f"Starting base ({job_label})", 0.0, 2_000_000.0, 100000.0, 1000.0, key=f"{key_prefix}_base")
 
-    # Raises
-    rt_default = 'fixed' if defaults.get('raise_type','fixed')=='fixed' else 'tri'
-    raise_choice = st.radio(f"Annual raises ({job_label})", ["Fixed %", "Triangular"], index=0 if rt_default=='fixed' else 1, key=f"{key_prefix}_raise_type")
+    # Raises (Fixed vs Triangular)
+    raise_choice = st.radio(f"Annual raises ({job_label})", ["Fixed %", "Triangular"], index=0, key=f"{key_prefix}_raise_type")
     if raise_choice == "Fixed %":
-        r_fixed = st.number_input(f"Raise (fixed %, {job_label})", 0.0, 1.0, defaults.get('base_raise_fixed', 0.03), 0.005, key=f"{key_prefix}_rfix")
+        r_fixed = st.number_input(f"Raise (fixed %, {job_label})", 0.0, 1.0, 0.03, 0.005, key=f"{key_prefix}_rfix")
         r_tri = None
         r_type = 'fixed'
     else:
-        lo, mo, hi = defaults.get('raise_tri', (0.02, 0.03, 0.05))
-        lo = st.number_input(f"Raise low ({job_label})", 0.0, 1.0, lo, 0.005, key=f"{key_prefix}_rlo")
-        mo = st.number_input(f"Raise mode ({job_label})", 0.0, 1.0, mo, 0.005, key=f"{key_prefix}_rmo")
-        hi = st.number_input(f"Raise high ({job_label})", 0.0, 1.0, hi, 0.005, key=f"{key_prefix}_rhi")
+        lo = st.number_input(f"Raise low ({job_label})", 0.0, 1.0, 0.07, 0.005, key=f"{key_prefix}_rlo")
+        mo = st.number_input(f"Raise mode ({job_label})", 0.0, 1.0, 0.135, 0.005, key=f"{key_prefix}_rmo")
+        hi = st.number_input(f"Raise high ({job_label})", 0.0, 1.0, 0.20, 0.005, key=f"{key_prefix}_rhi")
         r_fixed = None
         r_tri = (lo, mo, hi)
         r_type = 'tri'
 
-    # Bonuses
-    bt_default = 'fixed' if defaults.get('bonus_type','tri')=='fixed' else 'tri'
-    bonus_choice = st.radio(f"Bonus (% of base, {job_label})", ["Fixed %", "Triangular"], index=0 if bt_default=='fixed' else 1, key=f"{key_prefix}_btype")
+    # Bonuses (Fixed vs Triangular)
+    bonus_choice = st.radio(f"Bonus (% of base, {job_label})", ["Fixed %", "Triangular"], index=0, key=f"{key_prefix}_btype")
     if bonus_choice == "Fixed %":
-        b_fixed = st.number_input(f"Bonus rate (fixed %, {job_label})", 0.0, 1.0, defaults.get('bonus_rate_fixed', 0.10), 0.01, key=f"{key_prefix}_bfix")
+        b_fixed = st.number_input(f"Bonus rate (fixed %, {job_label})", 0.0, 1.0, 0.10, 0.01, key=f"{key_prefix}_bfix")
         b_tri = None
         b_type = 'fixed'
     else:
-        blo, bmo, bhi = defaults.get('bonus_tri', (0.0, 0.20, 0.30))
-        blo = st.number_input(f"Bonus low ({job_label})", 0.0, 1.0, blo, 0.01, key=f"{key_prefix}_blo")
-        bmo = st.number_input(f"Bonus mode ({job_label})", 0.0, 1.0, bmo, 0.01, key=f"{key_prefix}_bmo")
-        bhi = st.number_input(f"Bonus high ({job_label})", 0.0, 1.0, bhi, 0.01, key=f"{key_prefix}_bhi")
+        blo = st.number_input(f"Bonus low ({job_label})", 0.0, 1.0, 0.10, 0.01, key=f"{key_prefix}_blo")
+        bmo = st.number_input(f"Bonus mode ({job_label})", 0.0, 1.0, 0.20, 0.01, key=f"{key_prefix}_bmo")
+        bhi = st.number_input(f"Bonus high ({job_label})", 0.0, 1.0, 0.30, 0.01, key=f"{key_prefix}_bhi")
         b_fixed = None
         b_tri = (blo, bmo, bhi)
         b_type = 'tri'
 
-    er_rate = st.number_input(f"Employer 401(k) on (base+bonus), {job_label}", 0.0, 1.0, defaults.get('employer_401k_rate_on_total', 0.0), 0.01, key=f"{key_prefix}_er")
+    er_rate = st.number_input(f"Employer 401(k) on (base+bonus), {job_label}", 0.0, 1.0, 0.00, 0.01, key=f"{key_prefix}_er")
 
-    vest_type = st.selectbox(f"Vesting type ({job_label})", ["immediate", "cliff", "graded"], index=["immediate","cliff","graded"].index(defaults.get('vesting_type','immediate')), key=f"{key_prefix}_vest")
+    vest_type = st.selectbox(f"Vesting type ({job_label})", ["immediate", "cliff", "graded"], index=0, key=f"{key_prefix}_vest")
     cliff_years = 0
     graded_sched = None
     if vest_type == "cliff":
-        cliff_years = st.number_input(f"Cliff years ({job_label})", 1, 10, defaults.get('cliff_years', 6), key=f"{key_prefix}_cliff")
+        cliff_years = st.number_input(f"Cliff years ({job_label})", 1, 10, 6, key=f"{key_prefix}_cliff")
     elif vest_type == "graded":
-        gs_default = defaults.get('graded_schedule_str', "1:0.25,2:0.50,3:0.75,4:1.0")
-        gs_str = st.text_input(f"Graded schedule year:frac, {job_label}", gs_default, key=f"{key_prefix}_gs")
+        gs_str = st.text_input(f"Graded schedule year:frac, {job_label}", "1:0.25,2:0.50,3:0.75,4:1.0", key=f"{key_prefix}_gs")
         try:
             graded_sched = []
             for p in [x.strip() for x in gs_str.split(',') if x.strip()]:
@@ -406,31 +359,11 @@ def job_controls(job_label: str, defaults: Dict, key_prefix: str) -> JobParams:
         graded_schedule=graded_sched,
     )
 
-# --- Presets (choose what each job starts from) ---
-PRESETS = {
-    "Original Job 1": dict(
-        base_start=125000.0,
-        raise_type="fixed", base_raise_fixed=0.03,
-        bonus_type="tri", bonus_tri=(0.00, 0.20, 0.30),
-        employer_401k_rate_on_total=0.15,
-        vesting_type="cliff", cliff_years=6,
-    ),
-    "Original Job 2": dict(
-        base_start=96000.0,
-        raise_type="tri", raise_tri=(0.07, 0.135, 0.20),
-        bonus_type="fixed", bonus_rate_fixed=0.10,
-        employer_401k_rate_on_total=0.00,
-        vesting_type="immediate",
-    ),
-    "Blank Custom": dict(
-        base_start=100000.0,
-        raise_type="fixed", base_raise_fixed=0.03,
-        bonus_type="fixed", bonus_rate_fixed=0.10,
-        employer_401k_rate_on_total=0.00,
-        vesting_type="immediate",
-    ),
-}
-
+col1, col2 = st.columns(2)
+with col1:
+    jobA = job_controls("Job 1", key_prefix="j1")
+with col2:
+    jobB = job_controls("Job 2", key_prefix="j2")
 
 # Global params
 gp = GlobalParams(
@@ -590,5 +523,6 @@ if run and horizons:
     st.download_button("Download Excel bundle", data=xlsx_bytes, file_name="job_comp_results.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 else:
-    st.info("Pick presets, enter values, then click **Run simulation** (or enable auto-run).")
+    st.info("Enter job inputs on the left and right, then click **Run simulation** (or enable auto-run).")
+
 
