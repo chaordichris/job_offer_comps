@@ -11,8 +11,7 @@ import streamlit as st
 # --------------------------------------------
 # Tax & contribution assumptions (editable)
 # --------------------------------------------
-# 2025-ish brackets (single filer) used for modeling; adjust as needed.
-FED_STD_DED = 15000.0
+FED_STD_DED = 15000.0  # single filer (approx.)
 FED_BRACKETS = [
     (0.00,    11600.0, 0.10),
     (11600.0, 47150.0, 0.12),
@@ -22,8 +21,7 @@ FED_BRACKETS = [
     (243725.0, 609350.0, 0.35),
     (609350.0, float('inf'), 0.37),
 ]
-
-IN_STATE_RATE = 0.03  # Indiana state income tax (flat). County added separately via UI.
+IN_STATE_RATE = 0.03  # Indiana flat income tax (county handled separately)
 
 # FICA
 SS_RATE = 0.062
@@ -32,11 +30,11 @@ MED_RATE = 0.0145
 ADD_MED_RATE = 0.009
 ADD_MED_THRESH = 200_000.0
 
-# IRS limits (can be overridden in UI)
+# IRS limits (override in UI if needed)
 DEFAULT_EMP_401K_LIMIT = 23_500.0
 DEFAULT_EMP_HSA_LIMIT_SINGLE = 4_300.0
 DEFAULT_EMP_HSA_LIMIT_FAMILY = 8_550.0
-K_OVERALL_LIMIT = 70_000.0  # employee + employer additions
+K_OVERALL_LIMIT = 70_000.0  # employee + employer
 
 # --------------------------------------------
 # Data classes
@@ -45,19 +43,19 @@ K_OVERALL_LIMIT = 70_000.0  # employee + employer additions
 class JobParams:
     name: str
     base_start: float
-    # Raises: either fixed % or triangular (low, mode, high)
-    raise_type: str  # 'fixed' or 'tri'
+    # Raises: fixed % or triangular (low, mode, high)
+    raise_type: str  # 'fixed' | 'tri'
     base_raise_fixed: Optional[float] = None
     raise_tri: Optional[Tuple[float, float, float]] = None
-    # Bonus: either fixed % of base or triangular % of base
-    bonus_type: str  # 'fixed' or 'tri'
+    # Bonuses: fixed % of base or triangular % of base
+    bonus_type: str  # 'fixed' | 'tri'
     bonus_rate_fixed: Optional[float] = None
     bonus_tri: Optional[Tuple[float, float, float]] = None
-    # Employer 401k and vesting
+    # Employer 401k & vesting
     employer_401k_rate_on_total: float = 0.0  # % of (base + bonus)
     vesting_type: str = 'immediate'          # 'immediate' | 'cliff' | 'graded'
     cliff_years: int = 0
-    graded_schedule: Optional[List[Tuple[int, float]]] = None  # e.g., [(1,0.25),(2,0.5),(3,0.75),(4,1.0)]
+    graded_schedule: Optional[List[Tuple[int, float]]] = None
 
 @dataclass
 class GlobalParams:
@@ -98,7 +96,6 @@ def compute_taxes_and_takehome(gross_wages: float, emp_401k: float, emp_hsa: flo
     add_med_tax = ADD_MED_RATE * max(0.0, fica_wages - ADD_MED_THRESH)
     fica = ss_tax + med_tax + add_med_tax
 
-    # Income taxes — simple approximation: same taxable base for federal, state, county
     taxable_income = max(0.0, gross_wages - emp_401k - emp_hsa - gp.std_deduction)
     federal_tax = federal_tax_from_taxable(taxable_income, gp.fed_brackets)
     state_tax = IN_STATE_RATE * taxable_income
@@ -132,7 +129,6 @@ def vested_fraction(year_index_1based: int, job: JobParams) -> float:
 def npv_of_flows(flows: List[float], rate: float) -> float:
     return sum(cf / ((1 + rate) ** (t + 1)) for t, cf in enumerate(flows))
 
-
 # --------------------------------------------
 # Monte Carlo engine
 # --------------------------------------------
@@ -140,64 +136,59 @@ def npv_of_flows(flows: List[float], rate: float) -> float:
 def _draw_series(n_trials: int, years: int, typ: str, fixed: Optional[float], tri: Optional[Tuple[float, float, float]]):
     if typ == 'fixed':
         return np.full((n_trials, years), fixed or 0.0)
-    # typ == 'tri'
     lo, mo, hi = tri or (0.0, 0.0, 0.0)
     return np.random.triangular(lo, mo, hi, size=(n_trials, years))
 
 
-def simulate_jobs(years: int, n_trials: int, job1: JobParams, job2: JobParams, gp: GlobalParams) -> pd.DataFrame:
+def simulate_jobs(years: int, n_trials: int, jobA: JobParams, jobB: JobParams, gp: GlobalParams) -> pd.DataFrame:
     records: List[Dict] = []
 
-    # Pre-draw stochastic series for both jobs (raises & bonuses)
-    j1_raise_draws = _draw_series(n_trials, years, job1.raise_type, job1.base_raise_fixed, job1.raise_tri)
-    j1_bonus_draws = _draw_series(n_trials, years, job1.bonus_type, job1.bonus_rate_fixed, job1.bonus_tri)
+    # Pre-draw stochastic series
+    a_raise = _draw_series(n_trials, years, jobA.raise_type, jobA.base_raise_fixed, jobA.raise_tri)
+    a_bonus = _draw_series(n_trials, years, jobA.bonus_type, jobA.bonus_rate_fixed, jobA.bonus_tri)
+    b_raise = _draw_series(n_trials, years, jobB.raise_type, jobB.base_raise_fixed, jobB.raise_tri)
+    b_bonus = _draw_series(n_trials, years, jobB.bonus_type, jobB.bonus_rate_fixed, jobB.bonus_tri)
 
-    j2_raise_draws = _draw_series(n_trials, years, job2.raise_type, job2.base_raise_fixed, job2.raise_tri)
-    j2_bonus_draws = _draw_series(n_trials, years, job2.bonus_type, job2.bonus_rate_fixed, job2.bonus_tri)
-
-    # ---- Job 1
+    # ---- Job A
     for trial in range(n_trials):
-        # Job 1 path
-        base = job1.base_start
+        # Job A path
+        base = jobA.base_start
         emp_401k_bal = 0.0
         emp_hsa_bal = 0.0
-        er_401k_bal = 0.0  # employer 401k balance (vested via schedule)
-        er_bal_progress: List[float] = []
+        er_401k_bal = 0.0
+        er_prog: List[float] = []
         takehomes: List[float] = []
 
         for yr in range(1, years + 1):
-            bonus_pct = float(j1_bonus_draws[trial, yr - 1])
-            raise_pct = float(j1_raise_draws[trial, yr - 1])
-
+            bonus_pct = float(a_bonus[trial, yr - 1])
+            raise_pct = float(a_raise[trial, yr - 1])
             bonus = bonus_pct * base
             gross = base + bonus
 
             emp_401k = min(gp.emp_401k_limit, gross)
             emp_hsa = min(gp.emp_hsa_limit, max(0.0, gross - emp_401k))
-
-            tentative_er = job1.employer_401k_rate_on_total * gross
+            tentative_er = jobA.employer_401k_rate_on_total * gross
             er_401k = min(tentative_er, max(0.0, K_OVERALL_LIMIT - emp_401k))
 
             taxes = compute_taxes_and_takehome(gross, emp_401k, emp_hsa, gp)
             takehomes.append(taxes["take_home"])
 
-            # Grow prior balances then add this year's contribs
             emp_401k_bal = emp_401k_bal * (1 + gp.invest_return) + emp_401k
             emp_hsa_bal = emp_hsa_bal * (1 + gp.invest_return) + emp_hsa
             er_401k_bal = er_401k_bal * (1 + gp.invest_return) + er_401k
-            er_bal_progress.append(er_401k_bal)
+            er_prog.append(er_401k_bal)
 
             base *= (1 + raise_pct)
 
-        # Compute vested employer 401k flows for NPV
+        # Vested flows for NPV
         vested_flows = [0.0] * years
         prev_vested = 0.0
         for yr in range(1, years + 1):
-            vest_frac = vested_fraction(yr, job1)
-            total_er_at_yr = er_bal_progress[yr - 1]
-            vested_amt = vest_frac * total_er_at_yr
-            increment = max(0.0, vested_amt - prev_vested)
-            vested_flows[yr - 1] = increment
+            frac = vested_fraction(yr, jobA)
+            total_er = er_prog[yr - 1]
+            vested_amt = frac * total_er
+            inc = max(0.0, vested_amt - prev_vested)
+            vested_flows[yr - 1] = inc
             prev_vested = vested_amt
 
         ending_vested_er = prev_vested
@@ -205,32 +196,30 @@ def simulate_jobs(years: int, n_trials: int, job1: JobParams, job2: JobParams, g
         npv_val = npv_of_flows(takehomes, gp.discount_rate) + npv_of_flows(vested_flows, gp.discount_rate)
 
         records.append({
-            "job": job1.name,
+            "job": jobA.name,
             "years": years,
             "sum_takehome": sum(takehomes),
             "ending_fv_total_invested": ending_fv,
             "npv_cash_plus_vested_er": npv_val,
         })
 
-        # Job 2 path
-        base = job2.base_start
+        # Job B path
+        base = jobB.base_start
         emp_401k_bal = 0.0
         emp_hsa_bal = 0.0
         er_401k_bal = 0.0
-        er_bal_progress = []
+        er_prog = []
         takehomes = []
 
         for yr in range(1, years + 1):
-            bonus_pct = float(j2_bonus_draws[trial, yr - 1])
-            raise_pct = float(j2_raise_draws[trial, yr - 1])
-
+            bonus_pct = float(b_bonus[trial, yr - 1])
+            raise_pct = float(b_raise[trial, yr - 1])
             bonus = bonus_pct * base
             gross = base + bonus
 
             emp_401k = min(gp.emp_401k_limit, gross)
             emp_hsa = min(gp.emp_hsa_limit, max(0.0, gross - emp_401k))
-
-            tentative_er = job2.employer_401k_rate_on_total * gross
+            tentative_er = jobB.employer_401k_rate_on_total * gross
             er_401k = min(tentative_er, max(0.0, K_OVERALL_LIMIT - emp_401k))
 
             taxes = compute_taxes_and_takehome(gross, emp_401k, emp_hsa, gp)
@@ -239,19 +228,18 @@ def simulate_jobs(years: int, n_trials: int, job1: JobParams, job2: JobParams, g
             emp_401k_bal = emp_401k_bal * (1 + gp.invest_return) + emp_401k
             emp_hsa_bal = emp_hsa_bal * (1 + gp.invest_return) + emp_hsa
             er_401k_bal = er_401k_bal * (1 + gp.invest_return) + er_401k
-            er_bal_progress.append(er_401k_bal)
+            er_prog.append(er_401k_bal)
 
             base *= (1 + raise_pct)
 
-        # Vested flows for Job 2
         vested_flows = [0.0] * years
         prev_vested = 0.0
         for yr in range(1, years + 1):
-            vest_frac = vested_fraction(yr, job2)
-            total_er_at_yr = er_bal_progress[yr - 1]
-            vested_amt = vest_frac * total_er_at_yr
-            increment = max(0.0, vested_amt - prev_vested)
-            vested_flows[yr - 1] = increment
+            frac = vested_fraction(yr, jobB)
+            total_er = er_prog[yr - 1]
+            vested_amt = frac * total_er
+            inc = max(0.0, vested_amt - prev_vested)
+            vested_flows[yr - 1] = inc
             prev_vested = vested_amt
 
         ending_vested_er = prev_vested
@@ -259,7 +247,7 @@ def simulate_jobs(years: int, n_trials: int, job1: JobParams, job2: JobParams, g
         npv_val = npv_of_flows(takehomes, gp.discount_rate) + npv_of_flows(vested_flows, gp.discount_rate)
 
         records.append({
-            "job": job2.name,
+            "job": jobB.name,
             "years": years,
             "sum_takehome": sum(takehomes),
             "ending_fv_total_invested": ending_fv,
@@ -274,6 +262,31 @@ def simulate_jobs(years: int, n_trials: int, job1: JobParams, job2: JobParams, g
 st.set_page_config(page_title="Job Compensation Monte Carlo (IN)", layout="wide")
 st.title("Job Compensation Monte Carlo – Indiana + County taxes")
 
+# Presets so inputs are selectable (not hard-coded)
+PRESETS = {
+    "Original Job 1": dict(
+        base_start=125000.0,
+        raise_type='fixed', base_raise_fixed=0.03,
+        bonus_type='tri', bonus_tri=(0.0, 0.20, 0.30),
+        employer_401k_rate_on_total=0.15,
+        vesting_type='cliff', cliff_years=6,
+    ),
+    "Original Job 2": dict(
+        base_start=96000.0,
+        raise_type='tri', raise_tri=(0.07, 0.135, 0.20),
+        bonus_type='fixed', bonus_rate_fixed=0.10,
+        employer_401k_rate_on_total=0.0,
+        vesting_type='immediate',
+    ),
+    "Blank Custom": dict(
+        base_start=100000.0,
+        raise_type='fixed', base_raise_fixed=0.03,
+        bonus_type='fixed', bonus_rate_fixed=0.10,
+        employer_401k_rate_on_total=0.00,
+        vesting_type='immediate',
+    ),
+}
+
 with st.sidebar:
     st.header("Global settings")
     horizons = st.multiselect("Horizon years", [5, 10, 20], default=[5, 10, 20])
@@ -284,7 +297,7 @@ with st.sidebar:
     st.divider()
     st.subheader("Taxes & limits")
     include_county = st.checkbox("Include county income tax", value=True)
-    county_rate = st.slider("County tax rate", 0.0, 0.035, 0.02, 0.0025, help="Approx. Marion County ~2% (set yours)")
+    county_rate = st.slider("County tax rate", 0.0, 0.035, 0.02, 0.0025, help="Approx. Marion County ~2%")
 
     filing_single = st.checkbox("Single filer (affects std deduction)", value=True)
     std_ded = st.number_input("Standard deduction", 0.0, 50000.0, FED_STD_DED if filing_single else 30000.0, 100.0)
@@ -303,51 +316,54 @@ with st.sidebar:
 
 st.subheader("Job setup")
 
-# Helper to render symmetric controls per job
+# Symmetric job control builder
 
-def job_controls(label: str, defaults: Dict, key_prefix: str) -> JobParams:
-    st.markdown(f"### {label}")
-    base = st.number_input(f"Starting base ({label})", 0.0, 2_000_000.0, defaults.get('base_start', 100000.0), 1000.0, key=f"{key_prefix}_base")
+def job_controls(job_label: str, defaults: Dict, key_prefix: str) -> JobParams:
+    name = st.text_input(f"Name ({job_label})", value=job_label, key=f"{key_prefix}_name")
+    base = st.number_input(f"Starting base ({job_label})", 0.0, 2_000_000.0, defaults.get('base_start', 100000.0), 1000.0, key=f"{key_prefix}_base")
 
     # Raises
-    raise_type = st.radio(f"Annual raises ({label})", ["Fixed %", "Triangular"], index=0 if defaults.get('raise_type','fixed')=='fixed' else 1, key=f"{key_prefix}_raise_type")
-    if raise_type == "Fixed %":
-        r_fixed = st.number_input(f"Raise (fixed %, {label})", 0.0, 1.0, defaults.get('base_raise_fixed', 0.03), 0.005, key=f"{key_prefix}_rfix")
+    rt_default = 'fixed' if defaults.get('raise_type','fixed')=='fixed' else 'tri'
+    raise_choice = st.radio(f"Annual raises ({job_label})", ["Fixed %", "Triangular"], index=0 if rt_default=='fixed' else 1, key=f"{key_prefix}_raise_type")
+    if raise_choice == "Fixed %":
+        r_fixed = st.number_input(f"Raise (fixed %, {job_label})", 0.0, 1.0, defaults.get('base_raise_fixed', 0.03), 0.005, key=f"{key_prefix}_rfix")
         r_tri = None
         r_type = 'fixed'
     else:
-        lo = st.number_input(f"Raise low ({label})", 0.0, 1.0, defaults.get('raise_tri', (0.07,0.135,0.20))[0], 0.005, key=f"{key_prefix}_rlo")
-        mo = st.number_input(f"Raise mode ({label})", 0.0, 1.0, defaults.get('raise_tri', (0.07,0.135,0.20))[1], 0.005, key=f"{key_prefix}_rmo")
-        hi = st.number_input(f"Raise high ({label})", 0.0, 1.0, defaults.get('raise_tri', (0.07,0.135,0.20))[2], 0.005, key=f"{key_prefix}_rhi")
+        lo, mo, hi = defaults.get('raise_tri', (0.02, 0.03, 0.05))
+        lo = st.number_input(f"Raise low ({job_label})", 0.0, 1.0, lo, 0.005, key=f"{key_prefix}_rlo")
+        mo = st.number_input(f"Raise mode ({job_label})", 0.0, 1.0, mo, 0.005, key=f"{key_prefix}_rmo")
+        hi = st.number_input(f"Raise high ({job_label})", 0.0, 1.0, hi, 0.005, key=f"{key_prefix}_rhi")
         r_fixed = None
         r_tri = (lo, mo, hi)
         r_type = 'tri'
 
     # Bonuses
-    bonus_type = st.radio(f"Bonus (% of base, {label})", ["Fixed %", "Triangular"], index=0 if defaults.get('bonus_type','tri')=='fixed' else 1, key=f"{key_prefix}_btype")
-    if bonus_type == "Fixed %":
-        b_fixed = st.number_input(f"Bonus rate (fixed %, {label})", 0.0, 1.0, defaults.get('bonus_rate_fixed', 0.10), 0.01, key=f"{key_prefix}_bfix")
+    bt_default = 'fixed' if defaults.get('bonus_type','tri')=='fixed' else 'tri'
+    bonus_choice = st.radio(f"Bonus (% of base, {job_label})", ["Fixed %", "Triangular"], index=0 if bt_default=='fixed' else 1, key=f"{key_prefix}_btype")
+    if bonus_choice == "Fixed %":
+        b_fixed = st.number_input(f"Bonus rate (fixed %, {job_label})", 0.0, 1.0, defaults.get('bonus_rate_fixed', 0.10), 0.01, key=f"{key_prefix}_bfix")
         b_tri = None
         b_type = 'fixed'
     else:
         blo, bmo, bhi = defaults.get('bonus_tri', (0.0, 0.20, 0.30))
-        blo = st.number_input(f"Bonus low ({label})", 0.0, 1.0, blo, 0.01, key=f"{key_prefix}_blo")
-        bmo = st.number_input(f"Bonus mode ({label})", 0.0, 1.0, bmo, 0.01, key=f"{key_prefix}_bmo")
-        bhi = st.number_input(f"Bonus high ({label})", 0.0, 1.0, bhi, 0.01, key=f"{key_prefix}_bhi")
+        blo = st.number_input(f"Bonus low ({job_label})", 0.0, 1.0, blo, 0.01, key=f"{key_prefix}_blo")
+        bmo = st.number_input(f"Bonus mode ({job_label})", 0.0, 1.0, bmo, 0.01, key=f"{key_prefix}_bmo")
+        bhi = st.number_input(f"Bonus high ({job_label})", 0.0, 1.0, bhi, 0.01, key=f"{key_prefix}_bhi")
         b_fixed = None
         b_tri = (blo, bmo, bhi)
         b_type = 'tri'
 
-    er_rate = st.number_input(f"Employer 401(k) on (base+bonus), {label}", 0.0, 1.0, defaults.get('employer_401k_rate_on_total', 0.0), 0.01, key=f"{key_prefix}_er")
+    er_rate = st.number_input(f"Employer 401(k) on (base+bonus), {job_label}", 0.0, 1.0, defaults.get('employer_401k_rate_on_total', 0.0), 0.01, key=f"{key_prefix}_er")
 
-    vest_type = st.selectbox(f"Vesting type ({label})", ["immediate", "cliff", "graded"], index=["immediate","cliff","graded"].index(defaults.get('vesting_type','immediate')), key=f"{key_prefix}_vest")
+    vest_type = st.selectbox(f"Vesting type ({job_label})", ["immediate", "cliff", "graded"], index=["immediate","cliff","graded"].index(defaults.get('vesting_type','immediate')), key=f"{key_prefix}_vest")
     cliff_years = 0
     graded_sched = None
     if vest_type == "cliff":
-        cliff_years = st.number_input(f"Cliff years ({label})", 1, 10, defaults.get('cliff_years', 6), key=f"{key_prefix}_cliff")
+        cliff_years = st.number_input(f"Cliff years ({job_label})", 1, 10, defaults.get('cliff_years', 6), key=f"{key_prefix}_cliff")
     elif vest_type == "graded":
         gs_default = defaults.get('graded_schedule_str', "1:0.25,2:0.50,3:0.75,4:1.0")
-        gs_str = st.text_input(f"Graded schedule year:frac, {label}", gs_default, key=f"{key_prefix}_gs")
+        gs_str = st.text_input(f"Graded schedule year:frac, {job_label}", gs_default, key=f"{key_prefix}_gs")
         try:
             graded_sched = []
             for p in [x.strip() for x in gs_str.split(',') if x.strip()]:
@@ -355,11 +371,11 @@ def job_controls(label: str, defaults: Dict, key_prefix: str) -> JobParams:
                 graded_sched.append((int(y), float(f)))
             graded_sched.sort(key=lambda x: x[0])
         except Exception:
-            st.warning(f"Could not parse graded schedule for {label}; defaulting to 4-year 25/50/75/100%.")
+            st.warning(f"Could not parse graded schedule for {job_label}; defaulting to 4-year 25/50/75/100%.")
             graded_sched = [(1,0.25),(2,0.50),(3,0.75),(4,1.00)]
 
     return JobParams(
-        name=label,
+        name=name,
         base_start=base,
         raise_type=r_type,
         base_raise_fixed=r_fixed,
@@ -373,34 +389,20 @@ def job_controls(label: str, defaults: Dict, key_prefix: str) -> JobParams:
         graded_schedule=graded_sched,
     )
 
-# Defaults matching your original two scenarios
+# Preset selectors so inputs are **selectable** (not fixed)
+col_p1, col_p2 = st.columns(2)
+with col_p1:
+    preset1 = st.selectbox("Preset for Job 1", list(PRESETS.keys()), index=0)
+with col_p2:
+    preset2 = st.selectbox("Preset for Job 2", list(PRESETS.keys()), index=1)
+
 col1, col2 = st.columns(2)
 with col1:
-    job1 = job_controls(
-        "Job 1",
-        defaults=dict(
-            base_start=125000.0,
-            raise_type='fixed', base_raise_fixed=0.03,
-            bonus_type='tri', bonus_tri=(0.0, 0.20, 0.30),
-            employer_401k_rate_on_total=0.15,
-            vesting_type='cliff', cliff_years=6,
-        ),
-        key_prefix="j1",
-    )
+    jobA = job_controls("Job 1", defaults=PRESETS[preset1], key_prefix="j1")
 with col2:
-    job2 = job_controls(
-        "Job 2",
-        defaults=dict(
-            base_start=96000.0,
-            raise_type='tri', raise_tri=(0.07, 0.135, 0.20),
-            bonus_type='fixed', bonus_rate_fixed=0.10,
-            employer_401k_rate_on_total=0.0,
-            vesting_type='immediate',
-        ),
-        key_prefix="j2",
-    )
+    jobB = job_controls("Job 2", defaults=PRESETS[preset2], key_prefix="j2")
 
-# Build global params
+# Global params
 gp = GlobalParams(
     horizons=horizons,
     n_trials=n_trials,
@@ -422,7 +424,7 @@ if run and horizons:
     all_trials: List[pd.DataFrame] = []
     np.random.seed(42)  # reproducible per parameter set
     for y in horizons:
-        dfy = simulate_jobs(y, n_trials, job1, job2, gp)
+        dfy = simulate_jobs(y, n_trials, jobA, jobB, gp)
         all_trials.append(dfy)
     trials_df = pd.concat(all_trials, ignore_index=True)
 
@@ -432,13 +434,13 @@ if run and horizons:
 
     summary_rows = []
     for y in horizons:
-        for job in ["Job 1", "Job 2"]:
-            sub = trials_df[(trials_df["years"] == y) & (trials_df["job"] == job)]
+        for job_name in [jobA.name, jobB.name]:
+            sub = trials_df[(trials_df["years"] == y) & (trials_df["job"] == job_name)]
             for metric in ["sum_takehome", "ending_fv_total_invested", "npv_cash_plus_vested_er"]:
                 arr = sub[metric].to_numpy()
                 summary_rows.append({
                     "years": y,
-                    "job": job,
+                    "job": job_name,
                     "metric": metric,
                     "p10": pct(arr, 10),
                     "p25": pct(arr, 25),
@@ -475,15 +477,15 @@ if run and horizons:
         st.caption("Use Metric to toggle Take-home vs NPV vs Ending FV")
 
     yr = chart_year
-    def get_val(job, stat):
+    def get_val(job_name: str, stat: str):
         coln = f"{stat}|{metric_code}"
-        row = wide[(wide["years"] == yr) & (wide["job"] == job)]
+        row = wide[(wide["years"] == yr) & (wide["job"] == job_name)]
         return float(row[coln].iloc[0]) if not row.empty else np.nan
 
     band_data = pd.DataFrame({
-        "job": ["Job 1", "Job 1", "Job 1", "Job 2", "Job 2", "Job 2"],
+        "job": [jobA.name, jobA.name, jobA.name, jobB.name, jobB.name, jobB.name],
         "stat": ["p10", "p50", "p90", "p10", "p50", "p90"],
-        "value": [get_val("Job 1", s) for s in ["p10", "p50", "p90"]] + [get_val("Job 2", s) for s in ["p10", "p50", "p90"]],
+        "value": [get_val(jobA.name, s) for s in ["p10", "p50", "p90"]] + [get_val(jobB.name, s) for s in ["p10", "p50", "p90"]],
     })
 
     band_chart = alt.Chart(band_data).mark_bar().encode(
@@ -496,13 +498,13 @@ if run and horizons:
 
     long_rows = []
     for y in horizons:
-        for job in ["Job 1", "Job 2"]:
+        for job_name in [jobA.name, jobB.name]:
             for stat in ["p10", "p50", "p90"]:
                 long_rows.append({
                     "years": y,
-                    "job": job,
+                    "job": job_name,
                     "stat": stat,
-                    "value": float(wide[(wide["years"] == y) & (wide["job"] == job)][f"{stat}|{metric_code}"].iloc[0])
+                    "value": float(wide[(wide["years"] == y) & (wide["job"] == job_name)][f"{stat}|{metric_code}"].iloc[0])
                 })
     trend_df = pd.DataFrame(long_rows)
 
@@ -515,18 +517,18 @@ if run and horizons:
     ).properties(height=350)
     st.altair_chart(trend_chart, use_container_width=True)
 
-    # Difference table (J2 - J1)
+    # Difference table (JobB − JobA)
     rows = []
     for y in horizons:
         r = {"years": y}
         for stat in ["p10", "p50", "p90", "mean"]:
             r[f"{stat}_diff"] = (
-                float(wide[(wide["years"] == y) & (wide["job"] == "Job 2")][f"{stat}|{metric_code}"].iloc[0])
-                - float(wide[(wide["years"] == y) & (wide["job"] == "Job 1")][f"{stat}|{metric_code}"].iloc[0])
+                float(wide[(wide["years"] == y) & (wide["job"] == jobB.name)][f"{stat}|{metric_code}"].iloc[0])
+                - float(wide[(wide["years"] == y) & (wide["job"] == jobA.name)][f"{stat}|{metric_code}"].iloc[0])
             )
         rows.append(r)
     diff_df = pd.DataFrame(rows)
-    st.markdown("### Difference (Job 2 − Job 1)")
+    st.markdown(f"### Difference ({jobB.name} − {jobA.name})")
     st.dataframe(diff_df)
 
     # Downloads (CSV/XLSX)
@@ -558,4 +560,5 @@ if run and horizons:
     st.download_button("Download Excel bundle", data=xlsx_bytes, file_name="job_comp_results.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 else:
-    st.info("Adjust parameters, then click **Run simulation** (or enable auto-run).")
+    st.info("Pick presets, enter values, then click **Run simulation** (or enable auto-run).")
+
