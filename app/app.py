@@ -389,18 +389,46 @@ def job_controls(job_label: str, defaults: Dict, key_prefix: str) -> JobParams:
         graded_schedule=graded_sched,
     )
 
-# Preset selectors so inputs are **selectable** (not fixed)
+# --- Presets (choose what each job starts from) ---
+PRESETS = {
+    "Original Job 1": dict(
+        base_start=125000.0,
+        raise_type="fixed", base_raise_fixed=0.03,
+        bonus_type="tri", bonus_tri=(0.00, 0.20, 0.30),
+        employer_401k_rate_on_total=0.15,
+        vesting_type="cliff", cliff_years=6,
+    ),
+    "Original Job 2": dict(
+        base_start=96000.0,
+        raise_type="tri", raise_tri=(0.07, 0.135, 0.20),
+        bonus_type="fixed", bonus_rate_fixed=0.10,
+        employer_401k_rate_on_total=0.00,
+        vesting_type="immediate",
+    ),
+    "Blank Custom": dict(
+        base_start=100000.0,
+        raise_type="fixed", base_raise_fixed=0.03,
+        bonus_type="fixed", bonus_rate_fixed=0.10,
+        employer_401k_rate_on_total=0.00,
+        vesting_type="immediate",
+    ),
+}
+
+# Place these right under st.subheader("Job setup")
+st.markdown("### Presets")
 col_p1, col_p2 = st.columns(2)
 with col_p1:
-    preset1 = st.selectbox("Preset for Job 1", list(PRESETS.keys()), index=0)
+    preset1 = st.selectbox("Preset for Job 1", list(PRESETS.keys()), index=0, key="preset1")
 with col_p2:
-    preset2 = st.selectbox("Preset for Job 2", list(PRESETS.keys()), index=1)
+    preset2 = st.selectbox("Preset for Job 2", list(PRESETS.keys()), index=1, key="preset2")
 
+# Editors (use the chosen preset as defaults)
 col1, col2 = st.columns(2)
 with col1:
     jobA = job_controls("Job 1", defaults=PRESETS[preset1], key_prefix="j1")
 with col2:
     jobB = job_controls("Job 2", defaults=PRESETS[preset2], key_prefix="j2")
+
 
 # Global params
 gp = GlobalParams(
