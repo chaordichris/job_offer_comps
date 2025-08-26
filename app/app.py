@@ -317,18 +317,20 @@ with st.sidebar:
 st.subheader("Job setup")
 
 # Place these right under st.subheader("Job setup")
-st.markdown("### Presets")
-col_p1, col_p2 = st.columns(2)
-with col_p1:
-    preset1 = st.selectbox("Preset for Job 1", list(PRESETS.keys()), index=0, key="preset1")
-with col_p2:
-    preset2 = st.selectbox("Preset for Job 2", list(PRESETS.keys()), index=1, key="preset2")
+# st.markdown("### Presets")
+# col_p1, col_p2 = st.columns(2)
+# with col_p1:
+    
+# with col_p2:
+    
 
 # Editors (use the chosen preset as defaults)
 col1, col2 = st.columns(2)
 with col1:
+    preset1 = st.selectbox("Preset for Job 1", list(PRESETS.keys()), index=0, key="preset1")
     jobA = job_controls("Job 1", defaults=PRESETS[preset1], key_prefix="j1")
 with col2:
+    preset2 = st.selectbox("Preset for Job 2", list(PRESETS.keys()), index=1, key="preset2")
     jobB = job_controls("Job 2", defaults=PRESETS[preset2], key_prefix="j2")
 
 # Symmetric job control builder
