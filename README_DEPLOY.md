@@ -1,16 +1,17 @@
 # Streamlit Cloud Deployment
 
-## Files in this folder
-- requirements.txt  → Python dependencies
-- runtime.txt       → Python version (3.11)
-- .streamlit/config.toml → Optional UI/server settings
+## Files used
+- `requirements.txt` (dependencies)
+- `runtime.txt` (Python version)
+- `config.toml` (optional Streamlit config in this repo)
+- `app/app.py` (app entry point)
 
 ## Quick start
-1. Push your repo (containing `streamlit_job_comp_mc_app.py`) to GitHub.
-2. Place these files at the repo root.
-3. In Streamlit Cloud, set app entry point to: `streamlit_job_comp_mc_app.py`
-4. Deploy. Cloud uses `requirements.txt` and `runtime.txt` automatically.
+1. Push this repo to GitHub.
+2. In Streamlit Community Cloud, create a new app from the repo.
+3. Set the app entry point to `app/app.py`.
+4. Deploy.
 
-### Notes
-- If you need system packages later, add `packages.txt` with apt package names.
-- Store any secrets in **App → Settings → Secrets** (Streamlit Cloud UI), not in your repo.
+## Notes
+- Add `packages.txt` later only if you need OS-level packages.
+- Put secrets in Streamlit Cloud app settings, not in the repo.
