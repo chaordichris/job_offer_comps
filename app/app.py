@@ -94,40 +94,142 @@ def evaluate_offer(offer: Offer) -> dict[str, float]:
     }
 
 
+def inject_styles() -> None:
+    st.markdown(
+        """
+        <style>
+        :root {
+            --paper: #f5f1e8;
+            --ink: #181512;
+            --muted: #6a6258;
+            --line: #d7cfbf;
+            --accent: #1f3b2d;
+            --accent-soft: #e4eadf;
+        }
+        .stApp {
+            background: linear-gradient(180deg, #f3efe6 0%, #f8f5ee 100%);
+            color: var(--ink);
+        }
+        .block-container {
+            max-width: 1100px;
+            padding-top: 1.2rem;
+            padding-bottom: 2.5rem;
+        }
+        h1, h2, h3 {
+            letter-spacing: -0.02em;
+        }
+        .eyebrow {
+            text-transform: uppercase;
+            letter-spacing: 0.14em;
+            font-size: 0.72rem;
+            color: var(--muted);
+            margin-bottom: 0.35rem;
+        }
+        .deck {
+            color: var(--muted);
+            max-width: 60ch;
+            line-height: 1.45;
+            margin-bottom: 1rem;
+        }
+        .rule {
+            border-top: 1px solid var(--line);
+            margin: 0.9rem 0 1.1rem 0;
+        }
+        .note {
+            background: rgba(255,255,255,0.55);
+            border: 1px solid var(--line);
+            padding: 0.7rem 0.9rem;
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+        [data-testid="stMetric"] {
+            background: rgba(255,255,255,0.6);
+            border: 1px solid var(--line);
+            padding: 0.6rem 0.8rem;
+        }
+        [data-testid="stMetricLabel"] {
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            font-size: 0.7rem;
+        }
+        div[data-testid="stExpander"] {
+            border: 1px solid var(--line);
+            background: rgba(255,255,255,0.52);
+        }
+        .offer-header {
+            border-top: 2px solid var(--ink);
+            padding-top: 0.55rem;
+            margin-bottom: 0.6rem;
+        }
+        .offer-header h3 {
+            margin: 0;
+        }
+        .verdict {
+            border-top: 2px solid var(--ink);
+            border-bottom: 1px solid var(--line);
+            padding: 0.8rem 0;
+            margin: 0.5rem 0 1rem 0;
+        }
+        .verdict strong {
+            font-size: 1.1rem;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def fmt_money(value: float) -> str:
+    sign = "-" if value < 0 else ""
+    return f"{sign}${abs(value):,.0f}"
+
+
 def offer_inputs(label: str, defaults: dict[str, float | str]) -> Offer:
-    st.subheader(label)
-    c1, c2 = st.columns(2)
+    st.markdown(f'<div class="offer-header"><h3>{label}</h3></div>', unsafe_allow_html=True)
+    name = st.text_input(f"{label} name", value=str(defaults["name"]), key=f"{label}_name", label_visibility="collapsed")
 
-    with c1:
-        name = st.text_input(f"{label} name", value=str(defaults["name"]), key=f"{label}_name")
-        base_salary = st.number_input(f"{label} base salary", min_value=0.0, value=float(defaults["base_salary"]), step=5000.0)
-        target_bonus_pct = st.slider(f"{label} target bonus (%)", 0.0, 100.0, float(defaults["target_bonus_pct"]) * 100, 1.0) / 100.0
-        sign_on = st.number_input(f"{label} sign-on", min_value=0.0, value=float(defaults["sign_on"]), step=5000.0)
-        annual_equity_grant_value = st.number_input(
-            f"{label} annual equity grant (current fair value)", min_value=0.0, value=float(defaults["annual_equity_grant_value"]), step=5000.0
-        )
-        option_strike_value = st.number_input(
-            f"{label} option strike (company value basis)", min_value=1.0, value=float(defaults["option_strike_value"]), step=1000000.0
-        )
-        company_value_now = st.number_input(
-            f"{label} company value now", min_value=1.0, value=float(defaults["company_value_now"]), step=1000000.0
-        )
-        expected_company_value_at_liquidity = st.number_input(
-            f"{label} expected company value at liquidity", min_value=1.0, value=float(defaults["expected_company_value_at_liquidity"]), step=1000000.0
-        )
+    with st.expander("Compensation", expanded=True):
+        c1, c2 = st.columns(2)
+        with c1:
+            base_salary = st.number_input(f"{label} base salary", min_value=0.0, value=float(defaults["base_salary"]), step=5000.0)
+            target_bonus_pct = st.slider(f"{label} target bonus (%)", 0.0, 100.0, float(defaults["target_bonus_pct"]) * 100, 1.0) / 100.0
+            sign_on = st.number_input(f"{label} sign-on", min_value=0.0, value=float(defaults["sign_on"]), step=5000.0)
+        with c2:
+            annual_equity_grant_value = st.number_input(
+                f"{label} annual equity grant (current fair value)", min_value=0.0, value=float(defaults["annual_equity_grant_value"]), step=5000.0
+            )
+            vesting_years = st.slider(f"{label} vesting period (years)", 1.0, 6.0, float(defaults["vesting_years"]), 0.5)
+            time_to_liquidity_years = st.slider(f"{label} years to liquidity", 0.5, 10.0, float(defaults["time_to_liquidity_years"]), 0.5)
 
-    with c2:
-        equity_volatility = st.slider(f"{label} equity volatility", 0.05, 1.50, float(defaults["equity_volatility"]), 0.05)
-        time_to_liquidity_years = st.slider(f"{label} years to liquidity", 0.5, 10.0, float(defaults["time_to_liquidity_years"]), 0.5)
-        vesting_years = st.slider(f"{label} vesting period (years)", 1.0, 6.0, float(defaults["vesting_years"]), 0.5)
-        exit_probability = st.slider(f"{label} exit/liquidity probability", 0.0, 1.0, float(defaults["exit_probability"]), 0.05)
-        layoff_probability = st.slider(f"{label} layoff probability (1Y)", 0.0, 1.0, float(defaults["layoff_probability"]), 0.05)
-        severance_months = st.slider(f"{label} severance months", 0.0, 12.0, float(defaults["severance_months"]), 0.5)
-        decision_flex_value = st.number_input(
-            f"{label} future decision flexibility value", min_value=0.0, value=float(defaults["decision_flex_value"]), step=1000.0
-        )
-        remote_value = st.number_input(f"{label} remote/commute value", value=float(defaults["remote_value"]), step=1000.0)
-        learning_value = st.number_input(f"{label} learning/network value", value=float(defaults["learning_value"]), step=1000.0)
+    with st.expander("Equity / Exit assumptions", expanded=False):
+        c1, c2 = st.columns(2)
+        with c1:
+            company_value_now = st.number_input(
+                f"{label} company value now", min_value=1.0, value=float(defaults["company_value_now"]), step=1000000.0
+            )
+            option_strike_value = st.number_input(
+                f"{label} option strike (company value basis)", min_value=1.0, value=float(defaults["option_strike_value"]), step=1000000.0
+            )
+            expected_company_value_at_liquidity = st.number_input(
+                f"{label} expected company value at liquidity", min_value=1.0, value=float(defaults["expected_company_value_at_liquidity"]), step=1000000.0
+            )
+        with c2:
+            equity_volatility = st.slider(f"{label} equity volatility", 0.05, 1.50, float(defaults["equity_volatility"]), 0.05)
+            exit_probability = st.slider(f"{label} exit/liquidity probability", 0.0, 1.0, float(defaults["exit_probability"]), 0.05)
+            layoff_probability = st.slider(f"{label} layoff probability (1Y)", 0.0, 1.0, float(defaults["layoff_probability"]), 0.05)
+            severance_months = st.slider(f"{label} severance months", 0.0, 12.0, float(defaults["severance_months"]), 0.5)
+
+    with st.expander("Career optionality", expanded=False):
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            decision_flex_value = st.number_input(
+                f"{label} future decision flexibility value", min_value=0.0, value=float(defaults["decision_flex_value"]), step=1000.0
+            )
+        with c2:
+            remote_value = st.number_input(f"{label} remote/commute value", value=float(defaults["remote_value"]), step=1000.0)
+        with c3:
+            learning_value = st.number_input(f"{label} learning/network value", value=float(defaults["learning_value"]), step=1000.0)
 
     return Offer(
         name=name,
@@ -170,8 +272,15 @@ def sensitivity_table(offer_a: Offer, offer_b: Offer, rates: list[float], vols: 
 
 def main() -> None:
     st.set_page_config(page_title="Job Offer Real Options Comparator", layout="wide")
-    st.title("Job Offer Comparator (Real Options Lens)")
-    st.caption("Lightweight model: salary + bonus + option-like equity value + flexibility/learning option value - downside risk.")
+    inject_styles()
+
+    st.markdown('<div class="eyebrow">Offer Analysis</div>', unsafe_allow_html=True)
+    st.title("Job Offers, Read as Optionality")
+    st.markdown(
+        '<div class="deck">A restrained decision worksheet inspired by editorial sports design: compare immediate cash, probabilistic equity upside, and the quieter compounding value of flexibility and learning.</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown('<div class="rule"></div>', unsafe_allow_html=True)
 
     st.sidebar.header("Global Assumptions")
     risk_free_rate = st.sidebar.slider("Risk-free rate", 0.0, 0.10, 0.04, 0.005)
@@ -219,7 +328,7 @@ def main() -> None:
         "learning_value": 7000.0,
     }
 
-    left, right = st.columns(2)
+    left, right = st.columns([1, 1], gap="large")
     with left:
         offer_a = offer_inputs("Offer A", default_a)
     with right:
@@ -234,14 +343,16 @@ def main() -> None:
     b_metrics = evaluate_offer(offer_b)
     comparison = pd.DataFrame([a_metrics, b_metrics], index=[offer_a.name, offer_b.name]).T
 
-    st.divider()
-    st.subheader("Comparison")
-    st.dataframe(comparison.style.format("${:,.0f}"), use_container_width=True)
-
     a_total = a_metrics["1Y Total Expected Value"]
     b_total = b_metrics["1Y Total Expected Value"]
     winner = offer_a.name if a_total >= b_total else offer_b.name
     delta = abs(a_total - b_total)
+
+    st.markdown('<div class="rule"></div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="verdict"><strong>Verdict:</strong> {winner} leads by {fmt_money(delta)} in 1-year expected value under current assumptions.</div>',
+        unsafe_allow_html=True,
+    )
 
     c1, c2, c3 = st.columns(3)
     c1.metric("Preferred Offer", winner)
@@ -251,24 +362,67 @@ def main() -> None:
         f"${abs(a_metrics['Equity Option PV'] - b_metrics['Equity Option PV']):,.0f}",
     )
 
-    st.subheader("Sensitivity (Rate x Volatility)")
-    sens = sensitivity_table(
-        offer_a,
-        offer_b,
-        rates=[max(0.0, risk_free_rate - 0.02), risk_free_rate, min(0.10, risk_free_rate + 0.02)],
-        vols=[0.2, 0.4, 0.6, 0.8],
-    )
-    st.dataframe(sens, use_container_width=True)
+    tabs = st.tabs(["Breakdown", "Sensitivity", "Notes"])
 
-    st.subheader("How to Use the Real Options Lens")
-    st.markdown(
-        """
-- `Equity Option PV`: expected present value of equity using a Black-Scholes-style call approximation and exit probability.
-- `Strategic Option Value`: your estimate of career flexibility, network access, and learning compounding.
-- `Layoff Penalty`: expected downside to near-term cash flow (partially offset by severance).
-- Use sensitivity to test whether your decision flips under different volatility/rate assumptions.
-        """
-    )
+    with tabs[0]:
+        st.subheader("Value Breakdown")
+        st.dataframe(comparison.style.format("${:,.0f}"), use_container_width=True)
+
+        summary_rows = [
+            {
+                "Component": "Cash (base + bonus + sign-on)",
+                offer_a.name: a_metrics["Annual Cash"] + a_metrics["Sign-On"],
+                offer_b.name: b_metrics["Annual Cash"] + b_metrics["Sign-On"],
+            },
+            {
+                "Component": "Equity option present value",
+                offer_a.name: a_metrics["Equity Option PV"],
+                offer_b.name: b_metrics["Equity Option PV"],
+            },
+            {
+                "Component": "Strategic option value",
+                offer_a.name: a_metrics["Strategic Option Value"],
+                offer_b.name: b_metrics["Strategic Option Value"],
+            },
+            {
+                "Component": "Downside adjustment (penalty - severance)",
+                offer_a.name: a_metrics["Downside Risk"],
+                offer_b.name: b_metrics["Downside Risk"],
+            },
+        ]
+        summary_df = pd.DataFrame(summary_rows).set_index("Component")
+        st.dataframe(summary_df.style.format("${:,.0f}"), use_container_width=True)
+
+    with tabs[1]:
+        st.subheader("Sensitivity (Rate x Volatility)")
+        sens = sensitivity_table(
+            offer_a,
+            offer_b,
+            rates=[max(0.0, risk_free_rate - 0.02), risk_free_rate, min(0.10, risk_free_rate + 0.02)],
+            vols=[0.2, 0.4, 0.6, 0.8],
+        )
+        pivot = sens.pivot(index="Vol", columns="Rate", values="Winner")
+        st.dataframe(pivot, use_container_width=True)
+        st.dataframe(sens, use_container_width=True)
+
+    with tabs[2]:
+        st.markdown(
+            """
+            <div class="note">
+            <strong>Model notes.</strong> This is a decision aid, not a valuation report.
+            Equity is treated as an option-like payoff with user-specified probability of liquidity.
+            The most important inputs are usually exit probability, expected company value at liquidity, and your career optionality estimates.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            """
+            - `Equity Option PV`: Black-Scholes-style approximation scaled to your grant and discounted.
+            - `Strategic Option Value`: your subjective estimate of flexibility, learning, and network compounding.
+            - `Layoff Penalty`: expected near-term cash disruption, partially offset by severance.
+            """
+        )
 
 
 if __name__ == "__main__":
