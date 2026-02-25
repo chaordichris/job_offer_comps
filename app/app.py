@@ -350,6 +350,59 @@ def sensitivity_table(offer_a: Offer, offer_b: Offer, rates: list[float], vols: 
     return pd.DataFrame(rows)
 
 
+def horizon_value(offer: Offer, horizon_years: int) -> float:
+    """Approximate multi-year expected value using recurring annual terms plus one-time/option terms."""
+    metrics = evaluate_offer(Offer(**{**offer.__dict__, "time_to_liquidity_years": max(offer.time_to_liquidity_years, float(horizon_years))}))
+    recurring = (
+        metrics["Annual Cash"]
+        + metrics["Strategic Option Value"]
+        + metrics["Expected Severance Value"]
+        - metrics["Layoff Penalty"]
+    )
+    rate = max(offer.risk_free_rate, 0.0)
+    if rate == 0:
+        recurring_pv = recurring * horizon_years
+    else:
+        recurring_pv = sum(recurring / ((1 + rate) ** t) for t in range(1, horizon_years + 1))
+    return metrics["Sign-On"] + metrics["Equity Option PV"] + recurring_pv
+
+
+def horizon_sensitivity_series(offer_a: Offer, offer_b: Offer, max_years: int = 7) -> pd.DataFrame:
+    scenarios = [
+        ("Base", 0.0, 0.0),
+        ("Higher vol", 0.0, 0.15),
+        ("Lower vol", 0.0, -0.15),
+        ("Higher rate", 0.02, 0.0),
+    ]
+    rows = []
+    for label, dr, dv in scenarios:
+        a = Offer(
+            **{
+                **offer_a.__dict__,
+                "risk_free_rate": min(0.15, max(0.0, offer_a.risk_free_rate + dr)),
+                "equity_volatility": min(1.5, max(0.05, offer_a.equity_volatility + dv)),
+            }
+        )
+        b = Offer(
+            **{
+                **offer_b.__dict__,
+                "risk_free_rate": min(0.15, max(0.0, offer_b.risk_free_rate + dr)),
+                "equity_volatility": min(1.5, max(0.05, offer_b.equity_volatility + dv)),
+            }
+        )
+        for horizon in range(1, max_years + 1):
+            a_val = horizon_value(a, horizon)
+            b_val = horizon_value(b, horizon)
+            rows.append(
+                {
+                    "Horizon (years)": horizon,
+                    "Scenario": label,
+                    "Delta (A-B)": a_val - b_val,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
 def main() -> None:
     st.set_page_config(page_title="Job Offer Real Options Comparator", layout="wide")
     inject_styles()
@@ -408,9 +461,11 @@ def main() -> None:
 
     left, right = st.columns([1, 1], gap="large")
     with left:
-        offer_a = offer_inputs("Offer A", default_a)
+        with st.expander("Offer A details", expanded=False):
+            offer_a = offer_inputs("Offer A", default_a)
     with right:
-        offer_b = offer_inputs("Offer B", default_b)
+        with st.expander("Offer B details", expanded=False):
+            offer_b = offer_inputs("Offer B", default_b)
 
     offer_a.risk_free_rate = risk_free_rate
     offer_b.risk_free_rate = risk_free_rate
@@ -453,6 +508,11 @@ def main() -> None:
     c3.metric(
         "Equity Upside Difference",
         f"${abs(a_metrics['Equity Option PV'] - b_metrics['Equity Option PV']):,.0f}",
+    )
+
+    st.markdown(
+        f'<div class="inline-def">Inputs are now collapsed by default. Open each offer panel only when you want to revise assumptions.</div>',
+        unsafe_allow_html=True,
     )
 
     tabs = st.tabs(["Breakdown", "Sensitivity", "Notes"])
@@ -498,6 +558,16 @@ def main() -> None:
         )
         pivot = sens.pivot(index="Vol", columns="Rate", values="Winner")
         st.dataframe(pivot, use_container_width=True)
+        st.markdown('<div class="inline-def">Time view: expected-value delta (Offer A minus Offer B) across horizons under a few assumption shifts.</div>', unsafe_allow_html=True)
+        horizon_df = horizon_sensitivity_series(offer_a, offer_b, max_years=7)
+        chart_df = horizon_df.pivot(index="Horizon (years)", columns="Scenario", values="Delta (A-B)")
+        chart_df["Zero reference"] = 0.0
+        st.line_chart(chart_df, use_container_width=True)
+        with st.expander("Time sensitivity data", expanded=False):
+            st.dataframe(
+                horizon_df.assign(**{"Delta (A-B)": lambda d: d["Delta (A-B)"].round(0)}),
+                use_container_width=True,
+            )
         with st.expander("Detailed sensitivity rows", expanded=False):
             st.dataframe(sens, use_container_width=True)
 
