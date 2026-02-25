@@ -111,12 +111,26 @@ def inject_styles() -> None:
             color: var(--ink);
         }
         .block-container {
-            max-width: 1100px;
-            padding-top: 1.2rem;
-            padding-bottom: 2.5rem;
+            max-width: 1120px;
+            padding-top: 0.8rem;
+            padding-bottom: 3rem;
         }
         h1, h2, h3 {
             letter-spacing: -0.02em;
+            color: var(--ink);
+            font-weight: 500;
+        }
+        h1 {
+            font-size: 2.2rem;
+            line-height: 1.05;
+            margin-bottom: 0.45rem;
+        }
+        h2 {
+            font-size: 1.05rem;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            color: var(--muted);
+            margin-top: 0.3rem;
         }
         .eyebrow {
             text-transform: uppercase;
@@ -127,25 +141,28 @@ def inject_styles() -> None:
         }
         .deck {
             color: var(--muted);
-            max-width: 60ch;
-            line-height: 1.45;
-            margin-bottom: 1rem;
+            max-width: 68ch;
+            line-height: 1.55;
+            margin-bottom: 1.25rem;
+            font-size: 1rem;
         }
         .rule {
             border-top: 1px solid var(--line);
-            margin: 0.9rem 0 1.1rem 0;
+            margin: 0.8rem 0 1.15rem 0;
         }
         .note {
-            background: rgba(255,255,255,0.55);
-            border: 1px solid var(--line);
-            padding: 0.7rem 0.9rem;
+            border-left: 2px solid var(--line);
+            padding: 0.15rem 0 0.15rem 0.8rem;
             color: var(--muted);
             font-size: 0.9rem;
+            background: transparent;
         }
         [data-testid="stMetric"] {
-            background: rgba(255,255,255,0.6);
-            border: 1px solid var(--line);
-            padding: 0.6rem 0.8rem;
+            background: transparent;
+            border: 0;
+            border-top: 1px solid var(--line);
+            padding: 0.55rem 0.15rem 0.25rem 0.15rem;
+            border-radius: 0;
         }
         [data-testid="stMetricLabel"] {
             color: var(--muted);
@@ -153,9 +170,15 @@ def inject_styles() -> None:
             letter-spacing: 0.06em;
             font-size: 0.7rem;
         }
+        [data-testid="stMetricValue"] {
+            font-size: 1.5rem;
+            letter-spacing: -0.02em;
+        }
         div[data-testid="stExpander"] {
             border: 1px solid var(--line);
-            background: rgba(255,255,255,0.52);
+            background: rgba(255,255,255,0.36);
+            border-radius: 0;
+            box-shadow: none;
         }
         .offer-header {
             border-top: 2px solid var(--ink);
@@ -164,15 +187,56 @@ def inject_styles() -> None:
         }
         .offer-header h3 {
             margin: 0;
+            font-size: 1.05rem;
+            font-weight: 600;
         }
         .verdict {
             border-top: 2px solid var(--ink);
             border-bottom: 1px solid var(--line);
-            padding: 0.8rem 0;
-            margin: 0.5rem 0 1rem 0;
+            padding: 1rem 0 0.9rem 0;
+            margin: 0.65rem 0 1.1rem 0;
+            line-height: 1.35;
         }
         .verdict strong {
-            font-size: 1.1rem;
+            font-size: 1.18rem;
+            font-weight: 600;
+        }
+        .marginal {
+            color: var(--muted);
+            font-size: 0.84rem;
+            line-height: 1.4;
+            border-top: 1px solid var(--line);
+            padding-top: 0.55rem;
+        }
+        .smallcaps {
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-size: 0.72rem;
+            color: var(--muted);
+        }
+        .inline-def {
+            color: var(--muted);
+            font-size: 0.88rem;
+            line-height: 1.45;
+            margin-top: 0.25rem;
+        }
+        [data-testid="stDataFrame"] {
+            border: 1px solid var(--line);
+            background: rgba(255,255,255,0.28);
+            padding: 0.15rem;
+        }
+        [data-testid="stSidebar"] {
+            border-right: 1px solid var(--line);
+            background: rgba(249,246,239,0.9);
+        }
+        [data-testid="stTabs"] button {
+            border-radius: 0 !important;
+        }
+        .caption-row {
+            display: grid;
+            grid-template-columns: 2.2fr 1fr;
+            gap: 1.5rem;
+            align-items: start;
         }
         </style>
         """,
@@ -183,6 +247,22 @@ def inject_styles() -> None:
 def fmt_money(value: float) -> str:
     sign = "-" if value < 0 else ""
     return f"{sign}${abs(value):,.0f}"
+
+
+def format_comparison_table(df: pd.DataFrame) -> pd.io.formats.style.Styler:
+    return (
+        df.style.format("${:,.0f}")
+        .set_properties(**{"text-align": "right"})
+        .set_table_styles(
+            [
+                {"selector": "th.col_heading", "props": "text-align:right; font-weight:600;"},
+                {"selector": "th.row_heading", "props": "text-align:left; color:#6a6258; font-weight:500;"},
+                {"selector": "td", "props": "border-bottom:1px solid #e6dece;"},
+                {"selector": "th", "props": "border-bottom:1px solid #d7cfbf;"},
+                {"selector": "table", "props": "font-size:0.92rem;"},
+            ]
+        )
+    )
 
 
 def offer_inputs(label: str, defaults: dict[str, float | str]) -> Offer:
@@ -282,12 +362,10 @@ def main() -> None:
     )
     st.markdown('<div class="rule"></div>', unsafe_allow_html=True)
 
-    st.sidebar.header("Global Assumptions")
+    st.sidebar.markdown('<div class="smallcaps">Global assumptions</div>', unsafe_allow_html=True)
     risk_free_rate = st.sidebar.slider("Risk-free rate", 0.0, 0.10, 0.04, 0.005)
     comparison_horizon = st.sidebar.slider("Comparison horizon (years)", 1, 5, 1)
-    st.sidebar.markdown(
-        "This app uses a practical approximation: equity is treated as a call option and strategic factors are modeled as user-entered real-option value."
-    )
+    st.sidebar.caption("Equity is treated as a call-option proxy; strategic factors are user-entered real-option value.")
 
     default_a = {
         "name": "Offer A",
@@ -350,11 +428,26 @@ def main() -> None:
 
     st.markdown('<div class="rule"></div>', unsafe_allow_html=True)
     st.markdown(
+        f"""
+        <div class="caption-row">
+          <div class="inline-def">
+            <span class="smallcaps">Method</span><br>
+            Expected value = immediate cash + probability-adjusted equity option present value + strategic option value
+            + expected severance value − layoff penalty. Use this as a comparative lens, not a precise forecast.
+          </div>
+          <div class="marginal">
+            The inputs that most often change the winner are <em>exit probability</em>, <em>expected exit value</em>, and your estimate of <em>career optionality</em>.
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown(
         f'<div class="verdict"><strong>Verdict:</strong> {winner} leads by {fmt_money(delta)} in 1-year expected value under current assumptions.</div>',
         unsafe_allow_html=True,
     )
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3 = st.columns([1.1, 1, 1])
     c1.metric("Preferred Offer", winner)
     c2.metric("Expected Value Delta", f"${delta:,.0f}")
     c3.metric(
@@ -366,7 +459,8 @@ def main() -> None:
 
     with tabs[0]:
         st.subheader("Value Breakdown")
-        st.dataframe(comparison.style.format("${:,.0f}"), use_container_width=True)
+        st.markdown('<div class="inline-def">Read vertically. The top line is the decision summary; the lower lines explain why.</div>', unsafe_allow_html=True)
+        st.dataframe(format_comparison_table(comparison), use_container_width=True)
 
         summary_rows = [
             {
@@ -391,10 +485,11 @@ def main() -> None:
             },
         ]
         summary_df = pd.DataFrame(summary_rows).set_index("Component")
-        st.dataframe(summary_df.style.format("${:,.0f}"), use_container_width=True)
+        st.dataframe(format_comparison_table(summary_df), use_container_width=True)
 
     with tabs[1]:
         st.subheader("Sensitivity (Rate x Volatility)")
+        st.markdown('<div class="inline-def">This grid shows where the preferred offer flips as financing conditions and equity uncertainty change.</div>', unsafe_allow_html=True)
         sens = sensitivity_table(
             offer_a,
             offer_b,
@@ -403,7 +498,8 @@ def main() -> None:
         )
         pivot = sens.pivot(index="Vol", columns="Rate", values="Winner")
         st.dataframe(pivot, use_container_width=True)
-        st.dataframe(sens, use_container_width=True)
+        with st.expander("Detailed sensitivity rows", expanded=False):
+            st.dataframe(sens, use_container_width=True)
 
     with tabs[2]:
         st.markdown(
@@ -416,13 +512,25 @@ def main() -> None:
             """,
             unsafe_allow_html=True,
         )
-        st.markdown(
-            """
-            - `Equity Option PV`: Black-Scholes-style approximation scaled to your grant and discounted.
-            - `Strategic Option Value`: your subjective estimate of flexibility, learning, and network compounding.
-            - `Layoff Penalty`: expected near-term cash disruption, partially offset by severance.
-            """
-        )
+        left_note, right_note = st.columns([1.2, 1], gap="large")
+        with left_note:
+            st.markdown(
+                """
+                - `Equity Option PV`: Black-Scholes-style approximation scaled to your grant and discounted.
+                - `Strategic Option Value`: your subjective estimate of flexibility, learning, and network compounding.
+                - `Layoff Penalty`: expected near-term cash disruption, partially offset by severance.
+                """
+            )
+        with right_note:
+            st.markdown(
+                """
+                <div class="marginal">
+                Tufte principle here: keep explanatory text adjacent to the numbers it explains.
+                Adjust one assumption at a time and watch whether the verdict changes.
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
 
 if __name__ == "__main__":
